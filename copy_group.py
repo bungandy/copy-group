@@ -5,8 +5,8 @@ from datetime import datetime
 import sys
 
 # === CONFIGURATION ===
-SDCARD_PATH = "/Volumes/SDCARD/DCIM/"      # Update to your SD card path
-TARGET_BASE = "/Users/andy/Photos/"       # Destination folder
+SDCARD_PATH = "/Volumes/Untitled/DCIM/"      # Update to your SD card path
+TARGET_BASE = "/Users/andy/TRANSIT_BLACKBOX/_SANDISK_128/"       # Destination folder
 
 def get_md5(file_path, chunk_size=8192):
     """Calculate MD5 checksum of a file."""
