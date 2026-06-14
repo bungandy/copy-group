@@ -1,14 +1,14 @@
 # Copy Group
 
-A Python script that automatically copies files from an SD card and organizes them by creation date into date-based folders, featuring a beautiful animated progress bar.
+A Python script that automatically copies files from an SD card and organizes them by creation date into year/date folders, with `.DNG` files routed into a dedicated `DNG` subfolder.
 
 ## What it does
 
-This script walks through all files on an SD card (or any mounted volume) and copies them to a local directory, automatically grouping them into folders named by their creation date (YYYYMMDD format). Features a sophisticated animated progress bar with gradient colors and real-time file transfer visualization.
+This script walks through all files on an SD card (or any mounted volume) and copies them to a local directory, automatically grouping them into `YYYY/YYYYMMDD` folders, with `.DNG` files routed into `YYYY/YYYYMMDD/DNG/`. Features a sophisticated animated progress bar with gradient colors and real-time file transfer visualization.
 
 ## Features
 
-- **Automatic date-based organization**: Files are grouped into folders named by their creation date
+- **Automatic date-based organization**: Files are grouped into `YYYY/YYYYMMDD` folders
 - **Beautiful animated progress bar**: Real-time gradient progress visualization with smooth animations
 - **Duplicate detection**: Automatically skips files that already exist and are identical (size, modification time, and MD5 checksum)
 - **Preserves file metadata**: Uses `shutil.copy2()` to maintain timestamps and other file attributes
@@ -63,15 +63,18 @@ The script creates a directory structure like this:
 
 ```
 TARGET_BASE/
-├── 20231201/
-│   ├── IMG_001.jpg
-│   ├── IMG_002.jpg
-│   └── VID_001.mp4
-├── 20231202/
-│   ├── IMG_003.jpg
-│   └── DOC_001.pdf
-└── 20231203/
-    └── IMG_004.jpg
+├── 2023/
+│   ├── 20231201/
+│   │   ├── IMG_001.jpg
+│   │   ├── IMG_002.jpg
+│   │   └── VID_001.mp4
+│   ├── 20231202/
+│   │   ├── IMG_003.jpg
+│   │   ├── DOC_001.pdf
+│   │   └── DNG/
+│   │       └── IMG_004.DNG
+│   └── 20231203/
+│       └── IMG_005.jpg
 ```
 
 ## Requirements
@@ -85,10 +88,11 @@ TARGET_BASE/
 
 ## Notes
 
-- The script uses file creation time (`st_birthtime` on macOS, `st_ctime` as fallback) for date grouping
+- The script uses file creation time (`st_birthtime` on macOS, `st_ctime` as fallback) for year/date grouping
 - Hidden files (starting with '.') are automatically skipped
 - The script will create the target directory if it doesn't exist
 - Duplicate files are detected using file size, modification time, and MD5 checksum comparison
+- Files with the `.DNG` extension are stored in a `DNG` subfolder under their date folder
 - The progress bar provides real-time feedback on copying speed and file sizes
 
 ## Troubleshooting

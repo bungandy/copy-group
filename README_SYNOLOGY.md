@@ -5,7 +5,7 @@ This script copies photos from an SD card to a Synology NAS using rsync over SSH
 ## Features
 
 - ✅ **Secure SSH transfer** using rsync
-- ✅ **Date-based organization** (YYYYMMDD folders)
+- ✅ **Date-based organization** (`YYYY/YYYYMMDD` folders)
 - ✅ **Duplicate detection** (skips identical files)
 - ✅ **Progress tracking** with rsync output
 - ✅ **Resume capability** (partial transfers)
@@ -71,7 +71,7 @@ python3 copy_group_synology.py
 1. **Tests SSH connection** to your Synology NAS
 2. **Scans your SD card** for photos and videos
 3. **Checks for duplicates** on the remote NAS
-4. **Organizes files by date** (YYYYMMDD folders)
+4. **Organizes files by year/date** (`YYYY/YYYYMMDD` folders)
 5. **Copies files using rsync** with progress display
 6. **Skips identical files** to save time and bandwidth
 
@@ -81,13 +81,16 @@ Files are organized on your Synology NAS like this:
 
 ```
 /volume1/photo_backup/
-├── 20241201/
-│   ├── IMG_001.jpg
-│   ├── IMG_002.jpg
-│   └── VID_001.mp4
-├── 20241202/
-│   ├── IMG_003.jpg
-│   └── VID_002.mp4
+├── 2024/
+│   ├── 20241201/
+│   │   ├── IMG_001.jpg
+│   │   ├── IMG_002.jpg
+│   │   └── VID_001.mp4
+│   ├── 20241202/
+│   │   ├── IMG_003.jpg
+│   │   ├── VID_002.mp4
+│   │   └── DNG/
+│   │       └── IMG_004.DNG
 └── ...
 ```
 

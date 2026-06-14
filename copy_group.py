@@ -20,55 +20,121 @@ def get_md5(file_path, chunk_size=8192):
         print(f"⚠️ Could not read {file_path}: {e}")
         return None
 
-def count_files_to_copy(directory, target_base):
-    """Count total number of files that will actually be copied (excluding duplicates)."""
-    count = 0
+
+def get_file_creation_time(src_path):
+    """Return the best available creation timestamp for a source file."""
+    stat = os.stat(src_path)
+    return stat.st_birthtime if hasattr(stat, "st_birthtime") else stat.st_ctime
+
+
+def build_target_dir(target_base, creation_time, filename):
+    """Build the destination directory for a file."""
+    year_folder = datetime.fromtimestamp(creation_time).strftime("%Y")
+    date_folder = datetime.fromtimestamp(creation_time).strftime("%Y%m%d")
+    target_dir = os.path.join(target_base, year_folder, date_folder)
+
+    if os.path.splitext(filename)[1].lower() == ".dng":
+        target_dir = os.path.join(target_dir, "DNG")
+
+    return target_dir
+
+
+def shorten_text(text, max_len=24):
+    """Shorten a label while keeping it readable."""
+    if len(text) <= max_len:
+        return text
+    if max_len <= 3:
+        return text[:max_len]
+    return text[: max_len - 3] + "..."
+
+
+def collect_files_to_copy(directory, target_base):
+    """Collect source and destination paths in one pass."""
+    files_to_copy = []
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.startswith('.'):
+            if file.startswith("."):
                 continue
-                
+
             src_path = os.path.join(root, file)
-            
-            # Get creation time
+
             try:
-                stat = os.stat(src_path)
-                creation_time = stat.st_birthtime if hasattr(stat, "st_birthtime") else stat.st_ctime
+                creation_time = get_file_creation_time(src_path)
             except Exception:
                 continue
 
-            # Format date folder
-            date_folder = datetime.fromtimestamp(creation_time).strftime("%Y%m%d")
-            target_dir = os.path.join(target_base, date_folder)
+            target_dir = build_target_dir(target_base, creation_time, file)
             dst_path = os.path.join(target_dir, file)
+            files_to_copy.append((src_path, dst_path, file))
 
-            # Only count if file doesn't exist or is different
-            if not os.path.exists(dst_path):
-                count += 1
-            else:
-                # Check if it's a duplicate
-                try:
-                    src_stat = os.stat(src_path)
-                    dst_stat = os.stat(dst_path)
-                    
-                    same_size = src_stat.st_size == dst_stat.st_size
-                    same_mtime = int(src_stat.st_mtime) == int(dst_stat.st_mtime)
-                    
-                    if not (same_size and same_mtime):
-                        count += 1
-                    # If size and mtime match, we'll do MD5 check during copy, but count it for now
-                    else:
-                        count += 1
-                except Exception:
-                    count += 1
-    return count
+    return files_to_copy
 
-def copy_file_with_progress(src_path, dst_path, filename=""):
+def render_compact_progress(filename, dst_path, copied, src_size, current_index, total_files):
+    """Render a compact progress line with numbering."""
+    bar_length = 22
+    percentage = (copied / src_size) * 100 if src_size else 100
+    filled_length = int(bar_length * copied // src_size) if src_size else bar_length
+    colors = [
+        '\033[38;5;52m',
+        '\033[38;5;88m',
+        '\033[38;5;124m',
+        '\033[38;5;160m',
+        '\033[38;5;196m',
+        '\033[38;5;202m',
+        '\033[38;5;208m',
+        '\033[38;5;214m',
+        '\033[38;5;220m',
+        '\033[38;5;226m',
+    ]
+
+    bar = ''
+    for i in range(filled_length):
+        color_idx = min(int((i / max(filled_length, 1)) * len(colors)), len(colors) - 1)
+        bar += colors[color_idx] + '█'
+
+    if 0 < filled_length < bar_length:
+        edge_color = colors[min(int((percentage / 100) * (len(colors) - 1)), len(colors) - 1)]
+        edge_chars = ['▊', '▋', '▌', '▍', '▎', '▏']
+        edge_idx = min(int((percentage / 100) * len(edge_chars)), len(edge_chars) - 1)
+        bar += edge_color + edge_chars[edge_idx]
+        filled_length += 1
+
+    remaining = bar_length - filled_length
+    if remaining > 0:
+        bar += '\033[38;5;240m' + '░' * remaining
+
+    bar += '\033[0m'
+    spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    spinner = spinner_chars[int((copied / (8192 * 8)) % len(spinner_chars))]
+
+    if percentage >= 100:
+        percentage_color = '\033[38;5;226m\033[1m'
+    elif percentage >= 75:
+        percentage_color = '\033[38;5;220m\033[1m'
+    elif percentage >= 50:
+        percentage_color = '\033[38;5;208m\033[1m'
+    else:
+        percentage_color = '\033[38;5;196m\033[1m'
+
+    display_name = shorten_text(os.path.basename(filename), 20)
+    target_path = os.path.relpath(os.path.dirname(dst_path), TARGET_BASE)
+    if target_path == ".":
+        target_path = os.path.basename(os.path.dirname(dst_path))
+
+    print(
+        f"\r\033[K{current_index:>3}/{total_files:<3} {display_name:<20} -> "
+        f"{shorten_text(target_path, 24):<24} [{bar}] {percentage_color}{percentage:5.1f}%\033[0m {spinner}",
+        end='',
+        flush=True,
+    )
+
+
+def copy_file_with_progress(src_path, dst_path, filename="", current_index=1, total_files=1):
     """Copy a file while showing real-time progress."""
     try:
         src_size = os.path.getsize(src_path)
         if src_size == 0:
-            print(f"\r📁 Copying: {filename} (0 bytes)", end='', flush=True)
+            render_compact_progress(filename, dst_path, 0, 0, current_index, total_files)
             shutil.copy2(src_path, dst_path)
             return True
             
@@ -90,88 +156,29 @@ def copy_file_with_progress(src_path, dst_path, filename=""):
                     copied += len(chunk)
                     
                     # Update progress
-                    percentage = (copied / src_size) * 100
-                    bar_length = 40
-                    filled_length = int(bar_length * copied // src_size)
-                    
-                    # Super fancy Grok-style progress bar with gradient colors
-                    filled_blocks = filled_length
-                    
-                    # Red gradient color progression
-                    colors = [
-                        '\033[38;5;52m',   # Dark Red
-                        '\033[38;5;88m',   # Red
-                        '\033[38;5;124m',  # Medium Red
-                        '\033[38;5;160m',  # Bright Red
-                        '\033[38;5;196m',  # Vivid Red
-                        '\033[38;5;202m',  # Orange-Red
-                        '\033[38;5;208m',  # Orange
-                        '\033[38;5;214m',  # Yellow-Orange
-                        '\033[38;5;220m',  # Yellow
-                        '\033[38;5;226m'   # Bright Yellow
-                    ]
-                    
-                    # Build gradient bar
-                    bar = ''
-                    for i in range(filled_blocks):
-                        color_idx = min(int((i / filled_blocks) * len(colors)), len(colors) - 1)
-                        bar += colors[color_idx] + '█'
-                    
-                    # Add animated leading edge
-                    if filled_blocks > 0:
-                        edge_color = colors[min(int((filled_blocks / bar_length) * len(colors)), len(colors) - 1)]
-                        edge_chars = ['▊', '▋', '▌', '▍', '▎', '▏']
-                        edge_idx = int((copied / chunk_size) % len(edge_chars))
-                        bar += edge_color + edge_chars[edge_idx]
-                        filled_blocks += 1
-                    
-                    # Add remaining space with gradient fade
-                    remaining = bar_length - filled_blocks
-                    if remaining > 0:
-                        bar += '\033[38;5;240m' + '░' * remaining
-                    
-                    # Reset color
-                    bar += '\033[0m'
-                    
-                    # Add subtle animated indicator
-                    indicator_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-                    indicator_idx = int((copied / (chunk_size * 8)) % len(indicator_chars))
-                    indicator = indicator_chars[indicator_idx]
-                    
-                    # Format file size with fancy formatting
-                    src_size_mb = src_size / (1024 * 1024)
-                    copied_mb = copied / (1024 * 1024)
-                    
-                    # Add red-themed color to percentage
-                    if percentage >= 100:
-                        percentage_color = '\033[38;5;226m\033[1m'  # Bright yellow + bold
-                    elif percentage >= 75:
-                        percentage_color = '\033[38;5;220m\033[1m'  # Yellow + bold
-                    elif percentage >= 50:
-                        percentage_color = '\033[38;5;208m\033[1m'  # Orange + bold
-                    else:
-                        percentage_color = '\033[38;5;196m\033[1m'  # Vivid red + bold
-
-                    print(f"\r📀 Copying: [{bar}] {percentage_color}{percentage:.1f}%\033[0m ({copied_mb:.1f}MB/{src_size_mb:.1f}MB) - {filename} {indicator}", end='', flush=True)
+                    render_compact_progress(filename, dst_path, copied, src_size, current_index, total_files)
         
         # Preserve metadata
         shutil.copystat(src_path, dst_path)
         
-        # Clear the entire line and show red-themed completion
-        print(f"\r\033[K\033[38;5;226m\033[1m✅ Copied: {filename} 100.0% ({src_size_mb:.1f}MB/{src_size_mb:.1f}MB)\033[0m")
+        display_name = shorten_text(filename, 20)
+        target_path = os.path.relpath(os.path.dirname(dst_path), TARGET_BASE)
+        if target_path == ".":
+            target_path = os.path.basename(os.path.dirname(dst_path))
+        print(f"\r\033[K{current_index:>3}/{total_files:<3} {display_name:<20} -> {shorten_text(target_path, 24):<24} ✅ 100% ⠏")
         return True
         
     except Exception as e:
-        print(f"\r❌ Error copying {filename}: {e}")
+        print(f"\r❌ {current_index:>3}/{total_files:<3} {shorten_text(filename, 20)}: {e}")
         return False
 
 # === CREATE TARGET BASE IF NOT EXISTS ===
 os.makedirs(TARGET_BASE, exist_ok=True)
 
 try:
-    # First, count total files for progress tracking
     print("🔍 Scanning files...")
-    total_files = count_files_to_copy(SDCARD_PATH, TARGET_BASE)
+    files_to_copy = collect_files_to_copy(SDCARD_PATH, TARGET_BASE)
+    total_files = len(files_to_copy)
     print(f"Found {total_files} files to copy")
     print()  # Add extra space above copying progress
     
@@ -182,48 +189,33 @@ try:
     copied_files = 0
     skipped_files = 0
     
-    for root, _, files in os.walk(SDCARD_PATH):
-        for file in files:
-            src_path = os.path.join(root, file)
+    for index, (src_path, dst_path, file) in enumerate(files_to_copy, start=1):
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
 
-            # Skip hidden files
-            if file.startswith('.'):
+        # Skip if file already exists and is identical
+        if os.path.exists(dst_path):
+            src_stat = os.stat(src_path)
+            dst_stat = os.stat(dst_path)
+
+            same_size = src_stat.st_size == dst_stat.st_size
+            same_mtime = int(src_stat.st_mtime) == int(dst_stat.st_mtime)
+            same_checksum = get_md5(src_path) == get_md5(dst_path)
+
+            if same_size and same_mtime and same_checksum:
+                rel_target = os.path.relpath(os.path.dirname(dst_path), TARGET_BASE)
+                if rel_target == ".":
+                    rel_target = os.path.basename(os.path.dirname(dst_path))
+                print(f"\r⏩ {index:>3}/{total_files:<3} {shorten_text(file, 20)} -> {shorten_text(rel_target, 24)} skipped")
+                skipped_files += 1
                 continue
 
-            # Get creation time
-            try:
-                stat = os.stat(src_path)
-                creation_time = stat.st_birthtime if hasattr(stat, "st_birthtime") else stat.st_ctime
-            except Exception as e:
-                print(f"\n⚠️ Skipping {src_path}: {e}")
-                continue
-
-            # Format date folder
-            date_folder = datetime.fromtimestamp(creation_time).strftime("%Y%m%d")
-            target_dir = os.path.join(TARGET_BASE, date_folder)
-            os.makedirs(target_dir, exist_ok=True)
-
-            dst_path = os.path.join(target_dir, file)
-
-            # Skip if file already exists and is identical
-            if os.path.exists(dst_path):
-                src_stat = os.stat(src_path)
-                dst_stat = os.stat(dst_path)
-
-                same_size = src_stat.st_size == dst_stat.st_size
-                same_mtime = int(src_stat.st_mtime) == int(dst_stat.st_mtime)
-                same_checksum = get_md5(src_path) == get_md5(dst_path)
-
-                if same_size and same_mtime and same_checksum:
-                    print(f"\r⏩ Skipped (duplicate): {file}")
-                    skipped_files += 1
-                    continue
-
-            # Copy the file with progress
-            if copy_file_with_progress(src_path, dst_path, file):
-                copied_files += 1
-            else:
-                print(f"\r❌ Failed to copy {file}")
+        if copy_file_with_progress(src_path, dst_path, file, index, total_files):
+            copied_files += 1
+        else:
+            rel_target = os.path.relpath(os.path.dirname(dst_path), TARGET_BASE)
+            if rel_target == ".":
+                rel_target = os.path.basename(os.path.dirname(dst_path))
+            print(f"\r❌ {index:>3}/{total_files:<3} {shorten_text(file, 20)} -> {shorten_text(rel_target, 24)} failed")
 
     # Final summary
     print(f"\n🎉 Copy operation completed!")
