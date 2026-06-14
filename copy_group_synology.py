@@ -390,7 +390,7 @@ try:
         src_paths = files_by_target_dir[target_dir]
         attempted_files += len(src_paths)
 
-        print("🏁", end=" ")
+        print(f"[{folder_index:>3}/{total_folders:<3} folders] 📁", end=" ")
 
         if rsync_folder_batch(src_paths, target_dir, current_file_index, total_files):
             completed_folders += 1
